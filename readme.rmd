@@ -1,0 +1,54 @@
+## Instalation
+
+I am yet to distribute this as a pip (I may do it if people are interestes).
+ So in the meantime you have some prep work to do to use this package.
+ it is an easy 4 step process.
+
+ you need to install maturin 
+ pip install maturin
+ and numpy 
+ pip install numpy
+
+you need rust to compile the backend
+to install rust go to : https://www.rust-lang.org/tools/install
+and follow the instruction usually it just required to copy paste a link in the terminal.
+
+then you need to compile the backend
+here you have the option to either add it to your local python or virtual env.
+you can find detailed explanation here: https://github.com/PyO3/maturin (instead of <maturin build> you might use <maturin develop>)
+
+For the rest of the tutorial we will simply add it to the default python3 of your system
+
+using the terminal cd to the directory Rust_covpyo3
+then run the following command.
+
+cargo build --release
+maturin build --release
+
+depending your internet connexion it may take anything between 30 secondes to 5 minutes
+
+ae are almost there, maturin create what we call a wheel which is a the compiled librayr that python now how to work with
+we just need to tell python it exists.
+
+in case you created multiple wheel I would recommand you clean the content of this directory and run maturin once again
+
+Rust_covpyo3/target/wheels/
+
+to install it run:
+python -m pip install -U Rust_covpyo3/target/wheels/*.wheel
+
+now you can use this package.
+
+## Usage
+The workhorse of this package is the rust backend that can be accessed using either the following function
+The continuous tag is a legacy feature that may be remove in the future.
+
+get_cover_for_a_bam(intervalls, bam, continous=True)
+
+
+
+parse_bam_mp(args)
+
+
+
+
