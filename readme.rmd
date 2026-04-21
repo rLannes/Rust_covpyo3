@@ -1,6 +1,5 @@
 ## Instalation
 
-I am yet to distribute this as a pip (I may do it if people are interestes).
  So in the meantime you have some prep work to do to use this package.
  it is an easy 4 step process.
 
@@ -40,15 +39,53 @@ python -m pip install -U Rust_covpyo3/target/wheels/*.wheel
 now you can use this package.
 
 ## Usage
-The workhorse of this package is the rust backend that can be accessed using either the following function
-The continuous tag is a legacy feature that may be remove in the future.
 
-get_cover_for_a_bam(intervalls, bam, continous=True)
+### `get_coverage_algo2`
 
+Computes per-base coverage over a genomic region using an interval-based algorithm. Rather than piling up base-by-base, it parses each read's CIGAR string to determine the reference positions it covers, then increments a coverage array for those positions. This makes it efficient for sparse regions and gives you fine-grained control over which reads to include.
 
+```python
+from Rust_covpyo3 import get_coverage_algo2
 
-parse_bam_mp(args)
+coverage = get_coverage_algo2(
+    start=10000,
+    end=20000,
+    chrom="chr1",
+    strand="Plus",
+    bam_path="sample.bam",
+    lib="frFirstStrand",
+    mapq_thr=10,
+    flag_in=0,
+    flag_exclude=256,
+)
+# coverage is a list of ints, one per position from start to end
+```
 
+### Parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `start` | `int` | Start of the region (0-based, inclusive) |
+| `end` | `int` | End of the region (0-based, exclusive) |
+| `chrom` | `str` | Chromosome / sequence name |
+| `strand` | `str` | `"Plus"`, `"Minus"`, or `"NA"` (unstranded) |
+| `bam_path` | `str` | Path to an indexed BAM file |
+| `lib` | `str` | Library type — accepted values: `frFirstStrand` (TruSeq stranded), `frSecondStrand`, `fFirstStrand`, `fSecondStrand`, `ffFirstStrand`, `ffSecondStrand`, `rfFirstStrand`, `rfSecondStrand`, `rFirstStrand`, `rSecondStrand`. See [BAMstrandSpecifier](https://github.com/rLannes/BAMstrandSpecifier) |
+| `mapq_thr` | `int` | Minimum mapping quality. Set to `0` to disable filtering |
+| `flag_in` | `int` | SAM flags that **must** be set (bitwise). Use `0` for no requirement |
+| `flag_exclude` | `int` | SAM flags that **must not** be set (bitwise). e.g. `256` to exclude secondary alignments |
+
+### Returns
+
+A `list[int]` of length `end - start`, where each element is the read depth at that position.
+
+### How it works
+
+1. All reads overlapping the `[start, end)` region are fetched from the BAM index.
+2. Each read is filtered by `flag_in` / `flag_exclude` and mapping quality.
+3. For strand-specific libraries, the read's strand is inferred from its flags and the library type. Only reads matching the requested `strand` are kept. For unstranded libraries, all passing reads are counted.
+4. The read's CIGAR string is parsed to extract the intervals on the reference that the read actually covers (skipping deletions and spliced regions).
+5. Those intervals are intersected with `[start, end)` and the corresponding positions in the output array are incremented.
 
 
 
