@@ -137,7 +137,11 @@ fn get_coverage(start:i64, end:i64, chrom: String, strand: String,
 /// * `chrom` - Chromosome/sequence name
 /// * `strand` - Strand specification ("Plus", "Minus", or "NA" for unstranded)
 /// * `bam_path` - Path to the indexed BAM file
-/// * `lib` - Library type specification (e.g., "RF", "FR", "unstranded")
+/// * `lib` - Library type specification, accepted value: [frFirstStrand (TrueSeq stranded), frSecondStrand,
+/// *                                                        fFirstStrand, fSecondStrand,
+/// *                                                        ffFirstStrand, ffSecondStrand,
+/// *                                                        rfFirstStrand, rfSecondStrand,
+/// *                                                        rFirstStrand, rSecondStrand] see: (https://github.com/rLannes/BAMstrandSpecifier)
 /// * `mapq_thr` - Minimum mapping quality threshold (0 to disable filtering)
 /// * `flag_in` - SAM flags that must be present (bitwise AND)
 /// * `flag_exclude` - SAM flags that must be absent (bitwise AND)
