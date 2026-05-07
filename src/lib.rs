@@ -180,7 +180,7 @@ fn get_coverage_algo2(start:i64, end:i64, chrom: String, strand: String,
 
         pos_s = record.pos();
         cig = Cigar::from_str(&record.cigar().to_string()).unwrap();
-        pos_e = cig.get_end_of_aln(&pos_s);
+        //pos_e = cig.get_end_of_aln(pos_s);
         flag = record.flags();
         if check_flag(flag, flag_in, flag_exclude) && (mapq_thr == 0 || !(record.mapq() < mapq_thr)){
             match lib_type{
