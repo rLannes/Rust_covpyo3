@@ -10,6 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.19.0"
-rust-htslib = { version = "*"}
+rust-htslib = { version = "0.45.0"}
 strand_specifier = { git = "https://github.com/rLannes/BAMstrandSpecifier" }
 CigarParser = { git = "https://github.com/rLannes/CigarParser" }
