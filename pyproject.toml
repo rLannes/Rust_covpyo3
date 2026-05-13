@@ -1,18 +1,52 @@
 [build-system]
-requires = ["maturin>=1.4,<2.0", "setuptools-scm>=8"]
+requires = ["maturin>=1.4,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "Rust_covpyo3"
 dynamic = ["version"]
-requires-python = ">=3.8"
+readme = "README.rmd"
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",      
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 
+description = "Fast Rust-backed per-base coverage computation over genomic regions from BAM files."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }           
+authors = [
+    { name = "Romain Lannes", email = "romain.lannes@protonmail.com" },
+]
+keywords = ["bioinformatics", "bam", "coverage", "genomics", "rust", "pyo3"]
+
+dependencies = [
+    "numpy",
+]
+
+[project.urls]
+Homepage = "https://github.com/rLannes/Rust_covpyo3"       
+Repository = "https://github.com/rLannes/Rust_covpyo3"
+Issues = "https://github.com/rLannes/Rust_covpyo3/issues"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+
+
+# Uncomment for ABI3 builds (one wheel per platform instead of per Python version):
+# python-source = "python"          # if you have a mixed Rust/Python layout
+# module-name = "Rust_covpyo3._core" # if you use a private extension submodule
