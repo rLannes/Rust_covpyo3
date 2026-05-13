@@ -26,7 +26,6 @@ classifiers = [
 ]
 
 description = "Fast Rust-backed per-base coverage computation over genomic regions from BAM files."
-readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }           
 authors = [
