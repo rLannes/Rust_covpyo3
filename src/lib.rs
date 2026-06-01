@@ -46,6 +46,26 @@ fn get_header(bam_path: String) -> PyResult<Vec<String>>{
 }
 
 
+/// return number mapped reads per chromosome, plus the number of unmapped reads
+#[pyfunction]
+fn get_mapped_reads(bam_path: String) -> PyResult<Vec<(String, u64)>>{
+
+    let mut bam = IndexedReader::from_path(&bam_path).unwrap();
+    let mut seq: Vec<(String, u64)> = Vec::new(); 
+    let stats = bam.index_stats().unwrap();
+
+    for (tid, length, mapped, unreads) in stats{
+        if tid < 0{
+            seq.push(("Unammped".to_string(), mapped));
+            continue;
+        }
+        let name = std::str::from_utf8(bam.header().tid2name(tid as u32)).unwrap();
+        seq.push((name.to_string(), mapped));   
+    }
+    Ok(seq)
+}
+
+
 /// Calculates coverage at each position using the pileup algorithm.
 ///
 /// Retrieves primary aligned reads from a BAM file within a specified genomic region
@@ -261,5 +281,6 @@ fn Rust_covpyo3(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_coverage, m)?)?;
     m.add_function(wrap_pyfunction!(get_header, m)?)?;
     m.add_function(wrap_pyfunction!(get_coverage_algo2, m)?)?;
+    m.add_function(wrap_pyfunction!(get_mapped_reads, m)?)?;
     Ok(())
 }
