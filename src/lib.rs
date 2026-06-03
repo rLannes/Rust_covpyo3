@@ -1,8 +1,11 @@
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
+use pyo3::exceptions::PyRuntimeError;
+
 use rust_htslib::bam::{IndexedReader, Read, Header};
 use rust_htslib::bam;
 use std::collections::HashMap;
+use std::fmt::format;
 use strand_specifier_lib::{Strand, LibType, check_flag};
 use std::str::FromStr;
 use std::cmp;
@@ -31,7 +34,7 @@ use CigarParser::cigar::Cigar;
 #[pyfunction]
 fn get_header(bam_path: String) -> PyResult<Vec<String>>{
 
-    let bam = bam::Reader::from_path(&bam_path).unwrap();
+    let bam = bam::Reader::from_path(&bam_path).map_err(|e| PyRuntimeError::new_err(format!("Failed to read bam {} error: {}", bam_path, e)))?;
     let header = bam::Header::from_template(bam.header());
     let mut seq: Vec<String> = Vec::new(); 
 
@@ -50,16 +53,16 @@ fn get_header(bam_path: String) -> PyResult<Vec<String>>{
 #[pyfunction]
 fn get_mapped_reads(bam_path: String) -> PyResult<Vec<(String, u64)>>{
 
-    let mut bam = IndexedReader::from_path(&bam_path).unwrap();
+    let mut bam = IndexedReader::from_path(&bam_path).map_err(|e| PyRuntimeError::new_err(format!("Failed to read bam {} error: {}", bam_path, e)))?;
     let mut seq: Vec<(String, u64)> = Vec::new(); 
-    let stats = bam.index_stats().unwrap();
+    let stats = bam.index_stats().map_err(|e| PyRuntimeError::new_err(format!("Failed run index stats Error  {}", e)))?;
 
     for (tid, length, mapped, unreads) in stats{
         if tid < 0{
             seq.push(("Unammped".to_string(), mapped));
             continue;
         }
-        let name = std::str::from_utf8(bam.header().tid2name(tid as u32)).unwrap();
+        let name = std::str::from_utf8(bam.header().tid2name(tid as u32)).map_err(|e| PyRuntimeError::new_err(format!("Failed to read chromosome name Error {}", e)))?;
         seq.push((name.to_string(), mapped));   
     }
     Ok(seq)
@@ -96,16 +99,16 @@ fn get_mapped_reads(bam_path: String) -> PyResult<Vec<(String, u64)>>{
 fn get_coverage(start:i64, end:i64, chrom: String, strand: String,
      bam_path: String, lib: String, mapq_thr: u8) -> PyResult<Vec<u32>>{
     let mut container = vec![0; (end - start) as usize];
-    let mut bam = IndexedReader::from_path(&bam_path).unwrap();
+    let mut bam = IndexedReader::from_path(&bam_path).map_err(|e| PyRuntimeError::new_err(format!("Failed to read bam {} error: {}", bam_path, e)))?;
 
     let lib_type = LibType::from(lib.as_str());
     let strand_feature = Strand::from(strand.as_str());
 
-    bam.fetch((&chrom, start, end)).unwrap();
+    bam.fetch((&chrom, start, end)).map_err(|e| PyRuntimeError::new_err(format!("Failed to fecth position error: {}", e)))?;
     let mut read_strand: Strand = Strand::Plus; 
     let mut cpt = 0;
     for p in bam.pileup() {
-        let pileup = p.unwrap();
+        let pileup = p.map_err(|e| PyRuntimeError::new_err(format!("Failed to pileup error: {}", e)))?;
         cpt = 0;
         if start <= i64::from(pileup.pos()) && i64::from(pileup.pos()) < end {
             for alignment in pileup.alignments() {
@@ -180,12 +183,12 @@ fn get_coverage_algo2(start:i64, end:i64, chrom: String, strand: String,
      bam_path: String, lib: String, mapq_thr: u8, flag_in: u16, flag_exclude: u16) -> PyResult<Vec<u32>>{
     ///
     let mut container = vec![0; (end - start) as usize];
-    let mut bam = IndexedReader::from_path(&bam_path).unwrap();
+    let mut bam = IndexedReader::from_path(&bam_path).map_err(|e| PyRuntimeError::new_err(format!("Failed to read bam {} error: {}", bam_path, e)))?;
 
     let lib_type = LibType::from(lib.as_str());
     let strand_feature = Strand::from(strand.as_str());
 
-    bam.fetch((&chrom, start, end)).unwrap();
+    bam.fetch((&chrom, start, end)).map_err(|e| PyRuntimeError::new_err(format!("Failed to fecth position error: {}", e)))?;
     let mut read_strand: Strand = Strand::Plus; 
     let mut cpt = 0;
 
@@ -196,10 +199,10 @@ fn get_coverage_algo2(start:i64, end:i64, chrom: String, strand: String,
     let mut flag: u16;
 
     for p in bam.records() {
-        record = p.unwrap();
+        record = p.map_err(|e| PyRuntimeError::new_err(format!("Failed to read record error: {}", e)))?;
 
         pos_s = record.pos();
-        cig = Cigar::from_str(&record.cigar().to_string()).unwrap();
+        cig = Cigar::from_str(&record.cigar().to_string()).map_err(|e| PyRuntimeError::new_err(format!("Failed to parse cigar error: {}", e)))?;
         //pos_e = cig.get_end_of_aln(pos_s);
         flag = record.flags();
         if check_flag(flag, flag_in, flag_exclude) && (mapq_thr == 0 || !(record.mapq() < mapq_thr)){
