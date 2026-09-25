@@ -38,8 +38,8 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: 2014
-          before-script-linux: yum install -y perl-IPC-Cmd perl-Time-Piece
+          manylinux: 2_28
+          before-script-linux: yum install -y perl-IPC-Cmd perl-Time-Piece clang clang-devel
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:
