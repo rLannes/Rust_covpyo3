@@ -80,7 +80,7 @@ fn get_mapped_reads(bam_path: String) -> PyResult<Vec<(String, u64)>>{
 /// * `start` - Start position of the region (0-based, inclusive)
 /// * `end` - End position of the region (0-based, exclusive)
 /// * `chrom` - Chromosome/sequence name
-/// * `strand` - Strand specification ("Plus", "Minus", or "NA" for unstranded)
+/// * `strand` - Strand specification ("+", "-", or "." for unstranded)
 /// * `bam_path` - Path to the indexed BAM file
 /// * `lib` - Library type specification (e.g., "RF", "FR", "unstranded")
 /// * `mapq_thr` - Minimum mapping quality threshold
@@ -158,7 +158,7 @@ fn get_coverage(start:i64, end:i64, chrom: String, strand: String,
 /// * `start` - Start position of the region (0-based, inclusive)
 /// * `end` - End position of the region (0-based, exclusive)
 /// * `chrom` - Chromosome/sequence name
-/// * `strand` - Strand specification ("Plus", "Minus", or "NA" for unstranded)
+/// * `strand` - Strand specification ("+", "-", or "." for unstranded)
 /// * `bam_path` - Path to the indexed BAM file
 /// * `lib` - Library type specification, accepted value: [frFirstStrand (TrueSeq stranded), frSecondStrand,
 /// *                                                        fFirstStrand, fSecondStrand,
@@ -173,59 +173,31 @@ fn get_coverage(start:i64, end:i64, chrom: String, strand: String,
 ///
 /// A `PyResult` containing a vector of coverage values (u32) for each position in the region
 ///
+/// # Errors
+///
+/// Raises `RuntimeError` if:
+/// - the BAM file or its index cannot be opened
+/// - `start` is not strictly lower than `end`
+/// - the region cannot be fetched (e.g. `chrom` is not in the BAM header)
+/// - a record or its CIGAR string cannot be read
+///
 /// # Notes
 ///
 /// - Uses CIGAR string parsing to determine read coverage intervals
 /// - More flexible flag filtering compared to `get_coverage`
 /// - May be more efficient for sparse coverage regions
+/// - To query many regions from the same BAM, prefer `get_coverage_batch`
 #[pyfunction]
-fn get_coverage_algo2(start:i64, end:i64, chrom: String, strand: String,
+fn get_coverage_algo2(start: i64, end: i64, chrom: String, strand: String,
      bam_path: String, lib: String, mapq_thr: u8, flag_in: u16, flag_exclude: u16) -> PyResult<Vec<u32>>{
-    ///
-    let mut container = vec![0; (end - start) as usize];
+
     let mut bam = IndexedReader::from_path(&bam_path).map_err(|e| PyRuntimeError::new_err(format!("Failed to read bam {} error: {}", bam_path, e)))?;
 
     let lib_type = LibType::from(lib.as_str());
-    let strand_feature = Strand::from(strand.as_str());
 
-    bam.fetch((&chrom, start, end)).map_err(|e| PyRuntimeError::new_err(format!("Failed to fecth position error: {}", e)))?;
-    let mut read_strand: Strand = Strand::Plus; 
-    let mut cpt = 0;
+    get_coverage_open_bam(start, end, &chrom, &strand, &mut bam, &lib_type, mapq_thr, flag_in, flag_exclude)
 
-    let mut record: Record;
-    let mut pos_s: i64;
-    let mut pos_e: i64;
-    let mut cig: Cigar;
-    let mut flag: u16;
 
-    for p in bam.records() {
-        record = p.map_err(|e| PyRuntimeError::new_err(format!("Failed to read record error: {}", e)))?;
-
-        pos_s = record.pos();
-        cig = Cigar::from_str(&record.cigar().to_string()).map_err(|e| PyRuntimeError::new_err(format!("Failed to parse cigar error: {}", e)))?;
-        //pos_e = cig.get_end_of_aln(pos_s);
-        flag = record.flags();
-        if check_flag(flag, flag_in, flag_exclude) && (mapq_thr == 0 || !(record.mapq() < mapq_thr)){
-            match lib_type{
-                LibType::Unstranded | LibType::PairedUnstranded => {
-                    cover_from_intervall(&mut container, start, end, cig.get_reference_cover(pos_s));
-                },
-                _ => {
-                    if let Some(read_strand) = lib_type.get_strand(flag){
-                        if strand_feature == read_strand{
-                            cover_from_intervall(&mut container, start, end, cig.get_reference_cover(pos_s));
-                            }
-                        }
-                    }
-            }
-            //if let Some(read_strand) = lib_type.get_strand(flag){
-            //    if strand_feature == read_strand{
-            //        cover_from_intervall(&mut container, start, end, cig.get_reference_cover(pos_s));
-            //    }
-            //}
-        }
-    } 
-    return Ok(container)
 }
 
 
@@ -267,6 +239,124 @@ pub fn cover_from_intervall(feature_cover : &mut Vec<u32>,
 }
 
 
+/// Calculates coverage at each position for many regions of the same BAM file.
+///
+/// Same computation and filtering as `get_coverage_algo2`, applied to a list of
+/// regions. Faster than calling `get_coverage_algo2` in a loop, since the BAM file
+/// is opened only once.
+///
+/// # Arguments
+///
+/// * `batch` - List of regions as `(start, end, chrom, strand)` tuples, with `start`
+///   0-based inclusive, `end` 0-based exclusive and `strand` one of "+", "-" or ".".
+///   Regions can be given in any order.
+/// * `bam_path` - Path to the indexed BAM file
+/// * `lib` - Library type specification, same accepted values as `get_coverage_algo2`
+/// * `mapq_thr` - Minimum mapping quality threshold (0 to disable filtering)
+/// * `flag_in` - SAM flags that must be present (bitwise AND)
+/// * `flag_exclude` - SAM flags that must be absent (bitwise AND)
+///
+/// # Returns
+///
+/// A `PyResult` containing a dict mapping each `(start, end, chrom, strand)` tuple
+/// to its vector of coverage values (u32), one per position in the region.
+/// Duplicated regions appear once in the output.
+///
+/// # Errors
+///
+/// Raises `RuntimeError` under the same conditions as `get_coverage_algo2`.
+/// If any region fails, the whole batch fails and no result is returned.
+///
+/// # Example
+///
+/// ```python
+/// regions = [(1000, 2000, "chr1", "+"), (5000, 5500, "chr2", "-")]
+/// cov = get_coverage_batch(regions, "alignment.bam", "frFirstStrand", 10, 0, 256)
+/// cov[(1000, 2000, "chr1", "+")]  # list of 1000 coverage values
+/// ```
+#[pyfunction]
+pub fn get_coverage_batch(mut batch: Vec<(i64, i64, String, String)>, 
+     bam_path: String, lib: String, mapq_thr: u8, flag_in: u16, flag_exclude: u16) -> 
+        PyResult<HashMap<(i64, i64, String, String), Vec<u32>>> 
+    {
+        // sort to speed up the fetching
+        batch
+        .sort_by(|a, b| a.2.cmp(&b.2)
+        .then_with(|| a.0.cmp(&b.0)));
+
+        let mut res: HashMap<(i64, i64, String, String), Vec<u32>> = HashMap::new();
+
+        //
+        let mut bam = IndexedReader::from_path(&bam_path).map_err(|e| PyRuntimeError::new_err(format!("Failed to read bam {} error: {}", bam_path, e)))?;
+        let lib_type = LibType::from(lib.as_str());
+
+        for target in batch{
+
+            if res.contains_key(&target){continue;}
+
+            let v= get_coverage_open_bam(target.0, target.1,
+                  &target.2, &target.3,
+                   &mut bam, &lib_type, mapq_thr, flag_in, flag_exclude)?;
+            res.insert(target, v);
+
+        }
+        Ok(res)
+    }
+
+/// Computes interval-based coverage for one region using an already opened BAM reader.
+///
+/// Shared implementation of `get_coverage_algo2` and `get_coverage_batch`, so a single
+/// `IndexedReader` can be reused across successive fetches. Not exposed to Python.
+///
+/// Returns an error if `start >= end`, if the region cannot be fetched, or if a record
+/// or CIGAR string cannot be read.
+fn get_coverage_open_bam(start: i64, end: i64, chrom: &str, strand: &str,
+     bam: &mut IndexedReader, lib_type: &LibType, mapq_thr: u8, flag_in: u16, flag_exclude: u16) -> PyResult<Vec<u32>>{
+
+    if end <= start{
+        return Err(PyRuntimeError::new_err(format!("start({}) must be strictly inferior than end({})",
+                        start,
+                        end)));
+    }
+    let mut container = vec![0; (end - start) as usize];
+    let strand_feature = Strand::from(strand);
+
+    bam.fetch((chrom, start, end)).map_err(|e| PyRuntimeError::new_err(format!("Failed to fetch position {}:{}-{}  error: {}", chrom, start, end, e)))?;
+    let mut read_strand: Strand = Strand::Plus; 
+    let mut cpt = 0;
+
+    let mut record: Record = Record::new();
+    let mut pos_s: i64;
+    let mut pos_e: i64;
+    let mut cig: Cigar;
+    let mut flag: u16;
+
+    while let Some(r) = bam.read(&mut record){
+        r.map_err(|e| PyRuntimeError::new_err(format!("Failed to read record error: {}", e)))?;
+
+        pos_s = record.pos();
+
+        flag = record.flags();
+        if check_flag(flag, flag_in, flag_exclude) && (mapq_thr == 0 || !(record.mapq() < mapq_thr)){
+            
+            cig = Cigar::from_str(&record.cigar().to_string()).map_err(|e| PyRuntimeError::new_err(format!("Failed to parse cigar error: {}", e)))?;
+
+            match lib_type{
+                LibType::Unstranded | LibType::PairedUnstranded => {
+                    cover_from_intervall(&mut container, start, end, cig.get_reference_cover(pos_s));
+                },
+                _ => {
+                    if let Some(read_strand) = lib_type.get_strand(flag){
+                        if strand_feature == read_strand{
+                            cover_from_intervall(&mut container, start, end, cig.get_reference_cover(pos_s));
+                            }
+                        }
+                    }
+            }
+        }
+    } 
+    return Ok(container)
+}
 
 
 /// A Python module for calculating BAM coverage using Rust.
@@ -277,13 +367,16 @@ pub fn cover_from_intervall(feature_cover : &mut Vec<u32>,
 /// # Functions
 ///
 /// - `get_header`: Extract sequence names from BAM header
+/// - `get_mapped_reads`: Number of mapped reads per chromosome, plus unmapped reads
 /// - `get_coverage`: Calculate coverage using pileup algorithm
-/// - `get_coverage_algo2`: Calculate coverage using interval-based algorithm
+/// - `get_coverage_algo2`: Calculate coverage of one region using interval-based algorithm
+/// - `get_coverage_batch`: Calculate coverage of many regions using interval-based algorithm
 #[pymodule]
 fn Rust_covpyo3(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_coverage, m)?)?;
     m.add_function(wrap_pyfunction!(get_header, m)?)?;
     m.add_function(wrap_pyfunction!(get_coverage_algo2, m)?)?;
+    m.add_function(wrap_pyfunction!(get_coverage_batch, m)?)?;
     m.add_function(wrap_pyfunction!(get_mapped_reads, m)?)?;
     Ok(())
 }

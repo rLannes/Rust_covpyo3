@@ -1,65 +1,54 @@
 # Rust_covpyo3
- 
+
 A fast, Rust-backed Python library for computing per-base coverage over genomic regions from BAM files.
- 
+
 ---
 
+## Installation
 
+### From PyPI
 
-## Instalation
-
-### dependencies:
-python dependencies
-```
- pip install maturin
- pip install numpy
- ```
-
- rust 
- to install rust go to : https://www.rust-lang.org/tools/install
-and follow the instruction usually it just required to copy paste a link in the terminal.
-
-### install pip
-can be installed by pip! 
 ```bash
 pip install Rust_covpyo3
 ```
 
-### local build
+### Local build
+
 If no prebuilt wheel is available for your platform, or you want to build from source, you'll need to compile the Rust backend yourself.
- 
+
 **1. Install Python dependencies**
- 
+
 ```bash
 pip install maturin numpy
 ```
- 
+
 **2. Install a recent Rust toolchain**
- 
+
 Follow the official instructions at https://www.rust-lang.org/tools/install — usually a single command pasted into your terminal.
- 
+
 **3. Build and install the wheel**
- 
-From the repository root:
- 
+
 ```bash
+git clone https://github.com/rLannes/Rust_covpyo3
 cd Rust_covpyo3
 maturin build --release
 python -m pip install -U target/wheels/*.whl
 ```
 
 The build can take 30 seconds to a few minutes depending on your internet connection.
- 
+
 > 💡 If you build multiple times, clear `target/wheels/` first so `pip` only sees one wheel to install.
- 
+
 > 💡 If you're working in a virtual environment and want hot-reloading during development, use `maturin develop` instead of `maturin build`. See the [maturin documentation](https://github.com/PyO3/maturin) for details.
 
 
 ## Usage
 
+All coverage functions require an **indexed** BAM file (a `.bai` next to the `.bam`).
+
 ### `get_coverage_algo2`
 
-Computes per-base coverage over a genomic region using an interval-based algorithm. Rather than piling up base-by-base, it parses each read's CIGAR string to determine the reference positions it covers, then increments a coverage array for those positions. This makes it efficient for sparse regions and gives you fine-grained control over which reads to include.
+Computes per-base coverage over a single genomic region using an interval-based algorithm. Rather than piling up base-by-base, it parses each read's CIGAR string to determine the reference positions it covers, then increments a coverage array for those positions. This makes it efficient for sparse regions and gives you fine-grained control over which reads to include.
 
 ```python
 from Rust_covpyo3 import get_coverage_algo2
@@ -68,7 +57,7 @@ coverage = get_coverage_algo2(
     start=10000,
     end=20000,
     chrom="chr1",
-    strand="Plus",
+    strand="+",
     bam_path="sample.bam",
     lib="frFirstStrand",
     mapq_thr=10,
@@ -78,25 +67,73 @@ coverage = get_coverage_algo2(
 # coverage is a list of ints, one per position from start to end
 ```
 
-### Parameters
+#### Parameters
 
 | Parameter | Type | Description |
 |---|---|---|
 | `start` | `int` | Start of the region (0-based, inclusive) |
-| `end` | `int` | End of the region (0-based, exclusive) |
-| `chrom` | `str` | Chromosome / sequence name |
-| `strand` | `str` | `"Plus"`, `"Minus"`, or `"NA"` (unstranded) |
+| `end` | `int` | End of the region (0-based, exclusive). Must be strictly greater than `start` |
+| `chrom` | `str` | Chromosome / sequence name, as it appears in the BAM header |
+| `strand` | `str` | `"+"`, `"-"`, or `"."` (unstranded) |
 | `bam_path` | `str` | Path to an indexed BAM file |
 | `lib` | `str` | Library type — accepted values: `frFirstStrand` (TruSeq stranded), `frSecondStrand`, `fFirstStrand`, `fSecondStrand`, `ffFirstStrand`, `ffSecondStrand`, `rfFirstStrand`, `rfSecondStrand`, `rFirstStrand`, `rSecondStrand`. See [BAMstrandSpecifier](https://github.com/rLannes/BAMstrandSpecifier) |
 | `mapq_thr` | `int` | Minimum mapping quality. Set to `0` to disable filtering |
 | `flag_in` | `int` | SAM flags that **must** be set (bitwise). Use `0` for no requirement |
 | `flag_exclude` | `int` | SAM flags that **must not** be set (bitwise). e.g. `256` to exclude secondary alignments |
 
-### Returns
+#### Returns
 
 A `list[int]` of length `end - start`, where each element is the read depth at that position.
 
-### How it works
+#### Errors
+
+Raises `RuntimeError` if:
+- the BAM file or its index cannot be opened
+- `start` is not strictly lower than `end`
+- the region cannot be fetched (e.g. `chrom` is not in the BAM header)
+- a record or its CIGAR string cannot be read
+
+### `get_coverage_batch`
+
+Same computation and filtering as `get_coverage_algo2`, applied to many regions of the same BAM file at once. Use it instead of calling `get_coverage_algo2` in a loop: the BAM file is opened only once, which is much faster when you have many regions.
+
+```python
+from Rust_covpyo3 import get_coverage_batch
+
+regions = [
+    (10000, 20000, "chr1", "+"),
+    (50000, 55000, "chr1", "-"),
+    (3000, 4000, "chr2", "."),
+]
+
+coverage = get_coverage_batch(
+    regions,
+    bam_path="sample.bam",
+    lib="frFirstStrand",
+    mapq_thr=10,
+    flag_in=0,
+    flag_exclude=256,
+)
+
+coverage[(10000, 20000, "chr1", "+")]  # list of 10000 ints
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `batch` | `list[tuple[int, int, str, str]]` | Regions as `(start, end, chrom, strand)` tuples, with the same meaning as in `get_coverage_algo2`. Regions can be given in any order |
+| `bam_path`, `lib`, `mapq_thr`, `flag_in`, `flag_exclude` | | Same as `get_coverage_algo2`, applied to every region |
+
+#### Returns
+
+A `dict` mapping each `(start, end, chrom, strand)` tuple to its coverage `list[int]`. A region listed more than once appears once in the output.
+
+#### Errors
+
+Raises `RuntimeError` under the same conditions as `get_coverage_algo2`. If any region fails, the whole batch fails and no result is returned.
+
+### How the coverage is computed
 
 1. All reads overlapping the `[start, end)` region are fetched from the BAM index.
 2. Each read is filtered by `flag_in` / `flag_exclude` and mapping quality.
@@ -104,3 +141,24 @@ A `list[int]` of length `end - start`, where each element is the read depth at t
 4. The read's CIGAR string is parsed to extract the intervals on the reference that the read actually covers (skipping deletions and spliced regions).
 5. Those intervals are intersected with `[start, end)` and the corresponding positions in the output array are incremented.
 
+### Other functions
+
+#### `get_header(bam_path)`
+
+Returns the list of sequence (chromosome) names defined in the BAM header.
+
+```python
+from Rust_covpyo3 import get_header
+
+get_header("sample.bam")  # ["chr1", "chr2", ...]
+```
+
+#### `get_mapped_reads(bam_path)`
+
+Returns a list of `(chrom, n_mapped_reads)` tuples read from the BAM index, plus one extra entry for unmapped reads. Requires an indexed BAM file.
+
+```python
+from Rust_covpyo3 import get_mapped_reads
+
+get_mapped_reads("sample.bam")  # [("chr1", 123456), ("chr2", 98765), ...]
+```
