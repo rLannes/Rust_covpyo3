@@ -12,7 +12,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",      
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
-    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -66,7 +65,3 @@ before-script-linux = "yum install -y perl-IPC-Cmd"
 [tool.maturin.generate-ci.github.macos]
 targets = ["x86_64", "aarch64"]
 
-
-# Uncomment for ABI3 builds (one wheel per platform instead of per Python version):
-# python-source = "python"          # if you have a mixed Rust/Python layout
-# module-name = "Rust_covpyo3._core" # if you use a private extension submodule
