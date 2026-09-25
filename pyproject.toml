@@ -54,13 +54,13 @@ pytest = false                      # set to true once a tests/ suite exists
 arch = "x86_64"
 runner = "ubuntu-22.04"
 manylinux = "2014"
-before-script-linux = "yum install -y perl-IPC-Cmd"
+before-script-linux = "yum install -y perl-IPC-Cmd perl-Time-Piece"
 
 [[tool.maturin.generate-ci.github.linux.target]]
 arch = "aarch64"
 runner = "ubuntu-24.04-arm"         # native ARM runner, no cross-compilation of htslib
 manylinux = "2014"
-before-script-linux = "yum install -y perl-IPC-Cmd"
+before-script-linux = "yum install -y perl-IPC-Cmd perl-Time-Piece"
 
 [tool.maturin.generate-ci.github.macos]
 targets = ["x86_64", "aarch64"]
