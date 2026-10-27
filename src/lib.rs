@@ -192,7 +192,7 @@ fn get_coverage_algo2(start: i64, end: i64, chrom: String, strand: String,
      bam_path: String, lib: String, mapq_thr: u8, flag_in: u16, flag_exclude: u16) -> PyResult<Vec<u32>>{
 
     let mut bam = IndexedReader::from_path(&bam_path).map_err(|e| PyRuntimeError::new_err(format!("Failed to read bam {} error: {}", bam_path, e)))?;
-
+    // refactior with thread? bam.set_thread(n)?
     let lib_type = LibType::from(lib.as_str());
 
     get_coverage_open_bam(start, end, &chrom, &strand, &mut bam, &lib_type, mapq_thr, flag_in, flag_exclude)
@@ -340,6 +340,7 @@ fn get_coverage_open_bam(start: i64, end: i64, chrom: &str, strand: &str,
     let mut flag: u16;
 
     let mut record: Record = Record::new();
+    let is_stranded = !matches!(lib_type, LibType::Unstranded | LibType::PairedUnstranded); 
 
     while let Some(r) = bam.read(&mut record){
         r.map_err(|e| PyRuntimeError::new_err(format!(
@@ -347,10 +348,10 @@ fn get_coverage_open_bam(start: i64, end: i64, chrom: &str, strand: &str,
 
         pos_s = record.pos();
 
-        let is_stranded = !matches!(lib_type, LibType::Unstranded | LibType::PairedUnstranded); 
+        
         let flag = record.flags();
        
-        if check_flag(flag, flag_in, flag_exclude) && (mapq_thr == 0 || !(record.mapq() < mapq_thr)){
+        if !check_flag(flag, flag_in, flag_exclude) && (mapq_thr == 0 || !(record.mapq() < mapq_thr)){
             continue
         }
 
@@ -372,9 +373,7 @@ fn get_coverage_open_bam(start: i64, end: i64, chrom: &str, strand: &str,
                         }
                     ref_pos += l
                 }
-                2|3 =>  {
-                    
-                    
+                2|3 =>  {                    
                     ref_pos += l}, //N D
 
                 _ => {()}
@@ -383,7 +382,7 @@ fn get_coverage_open_bam(start: i64, end: i64, chrom: &str, strand: &str,
 
 
     }
-    Ok(container[..len].iter().scan(0u32, |acc, &d| {*acc += d as u32; Some(*acc as u32)}).collect())
+    Ok(container[..len].iter().scan(0i32, |acc, &d| {*acc += d as i32; Some(*acc as u32)}).collect())
 
 }
 
