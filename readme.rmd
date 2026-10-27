@@ -2,6 +2,7 @@
 
 A fast, Rust-backed Python library for computing per-base coverage over genomic regions from BAM files.
 
+v4.0.1 optimisation of mem alloc and using diff array 
 ---
 
 ## Installation
