@@ -369,7 +369,7 @@ fn get_coverage_open_bam(start: i64, end: i64, chrom: &str, strand: &str,
                     let (s, e) = (ref_pos.max(start), (ref_pos +l).min(end));
                     if s < e{
                         container[(s-start) as usize] += 1;
-                        container[(e-end) as usize] -= 1;
+                        container[(e-start) as usize] -= 1;
                         }
                     ref_pos += l
                 }
