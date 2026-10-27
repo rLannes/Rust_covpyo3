@@ -332,7 +332,7 @@ fn get_coverage_open_bam(start: i64, end: i64, chrom: &str, strand: &str,
     let mut cpt = 0;
 
     let len = (end - start) as usize;
-    let mut container = vec![0i32; len];
+    let mut container = vec![0i32; len + 1];
     
     let mut pos_s: i64;
     let mut pos_e: i64;
