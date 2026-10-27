@@ -310,6 +310,7 @@ pub fn get_coverage_batch(mut batch: Vec<(i64, i64, String, String)>,
 ///
 /// Returns an error if `start >= end`, if the region cannot be fetched, or if a record
 /// or CIGAR string cannot be read.
+/// trying new optimisation for CIGAR and array update
 fn get_coverage_open_bam(start: i64, end: i64, chrom: &str, strand: &str,
      bam: &mut IndexedReader, lib_type: &LibType, mapq_thr: u8, flag_in: u16, flag_exclude: u16) -> PyResult<Vec<u32>>{
 
@@ -318,28 +319,78 @@ fn get_coverage_open_bam(start: i64, end: i64, chrom: &str, strand: &str,
                         start,
                         end)));
     }
-    let mut container = vec![0; (end - start) as usize];
+
+
     let strand_feature = Strand::from(strand);
 
-    bam.fetch((chrom, start, end)).map_err(|e| PyRuntimeError::new_err(format!("Failed to fetch position {}:{}-{}  error: {}", chrom, start, end, e)))?;
+    bam.fetch((chrom, start, end))
+        .map_err(|e| PyRuntimeError::new_err(format!(
+            "Failed to fetch position {}:{}-{}  error: {}", chrom, start, end, e)))?;
+    
+    
     let mut read_strand: Strand = Strand::Plus; 
     let mut cpt = 0;
 
-    let mut record: Record = Record::new();
+    let len = (end - start) as usize;
+    let mut container = vec![0i32; len];
+    
     let mut pos_s: i64;
     let mut pos_e: i64;
     let mut cig: Cigar;
     let mut flag: u16;
 
+    let mut record: Record = Record::new();
+
     while let Some(r) = bam.read(&mut record){
-        r.map_err(|e| PyRuntimeError::new_err(format!("Failed to read record error: {}", e)))?;
+        r.map_err(|e| PyRuntimeError::new_err(format!(
+            "Failed to read record error: {}", e)))?;
 
         pos_s = record.pos();
 
-        flag = record.flags();
+        let is_stranded = !matches!(lib_type, LibType::Unstranded | LibType::PairedUnstranded); 
+        let flag = record.flags();
+       
         if check_flag(flag, flag_in, flag_exclude) && (mapq_thr == 0 || !(record.mapq() < mapq_thr)){
-            
-            cig = Cigar::from_str(&record.cigar().to_string()).map_err(|e| PyRuntimeError::new_err(format!("Failed to parse cigar error: {}", e)))?;
+            continue
+        }
+
+        if is_stranded && lib_type.get_strand(flag).map_or(true, |s| s != strand_feature){
+            continue;
+        };
+
+        let mut ref_pos = record.pos();    
+
+        for &c in record.raw_cigar(){
+            let l = (c >> 4) as i64;
+            match c & 0xf {// 0xf == 15 // see https://samtools.github.io/hts-specs/SAMv1.pdf p8.6 Cigar
+                0|7|8 =>{ // M X =
+                    //let next = ref_pos + l;
+                    let (s, e) = (ref_pos.max(start), (ref_pos +l).min(end));
+                    if s < e{
+                        container[(s-start) as usize] += 1;
+                        container[(e-end) as usize] -= 1;
+                        }
+                    ref_pos += l
+                }
+                2|3 =>  {
+                    
+                    
+                    ref_pos += l}, //N D
+
+                _ => {()}
+                }
+        }
+
+
+    }
+    Ok(container[..len].iter().scan(0u32, |acc, &d| {*acc += d as u32; Some(*acc as u32)}).collect())
+
+}
+
+        /*cig = Cigar::from_str(&record.cigar().to_string()).map_err(|e| PyRuntimeError::new_err(format!("Failed to parse cigar error: {}", e)))?;
+// |acc, &d| { *acc += d; Some(*acc as u32) }).collect())
+        
+
 
             match lib_type{
                 LibType::Unstranded | LibType::PairedUnstranded => {
@@ -356,7 +407,7 @@ fn get_coverage_open_bam(start: i64, end: i64, chrom: &str, strand: &str,
         }
     } 
     return Ok(container)
-}
+}*/
 
 
 /// A Python module for calculating BAM coverage using Rust.
